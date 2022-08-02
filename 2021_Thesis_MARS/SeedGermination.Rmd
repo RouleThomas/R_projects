@@ -1,0 +1,725 @@
+---
+title: "Seed germination analysis (ABA treated MHAL)"
+author: "Thomas Blein"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+bibliography: cite.bib
+output:
+    html_document:
+        toc: true
+        toc_float: true
+        number_sections: true
+link-citations: yes
+---
+
+A review to how to analyse censored data in biology was done by
+@doi:10.1111/aab.12477 . Seed germination are censored data, ie we monitored the
+seeds that germinate before a certain date. So we have time intervals. Classical
+statistics (ie ANOVA) are not working nicely to analyse this kind of data. None
+linear regression models need to be applied as for survival analysis, except
+that the curve is inverted.
+
+Several model can be fitted to germination data. The package `drc` propose two
+of them :
+
+- the classical [logistic
+  distribution](https://en.wikipedia.org/wiki/Logistic_distribution), which is
+  symmetric at the inflection point (T50, or time of 50% of germination).
+- [Weibull distributions](https://en.wikipedia.org/wiki/Weibull_distribution),
+  which is not symmetric at T50. Two type of parametrisation exist for the
+  Weibull function that are referred in `drc` package as `weibull1` and
+  `weibull2`.
+
+The method used here was adapted from method proposed on [Statistical Analysis of Agricultural
+Experiments using R](https://rstats4ag.org/), [chapter 14 Seed
+Germination](https://rstats4ag.org/seed-germination.html) and [Analysing seed
+germination data with R:
+a tutorial](https://www.statforbiology.com/seedgermination/index.html_document)
+
+Load the packages and set the default theme.
+
+```{r setup}
+
+library("tidyverse")
+library("multcompView")
+library("drc")
+
+theme_set(theme_bw())
+
+```
+
+# Data preparation
+
+Load the raw data from TSV file.
+
+```{r load_data}
+
+raw_data <-
+    read_tsv("./count_ABA_12.tsv", col_type=cols()) %>%
+    mutate(CumGerm=total_nb * radicule_out / 100,
+           concentration=factor(concentration),
+           plate_nb=factor(plate_nb),
+           genotype=genotype %>% tolower %>% factor)
+
+genotype_info <-
+    tibble(genotype_name=c("Col", "mrn1", "pro T-DNA", "RNAi 3.8", "RNAi 9.2",
+                           "35S:MRN1")) %>%
+    mutate(genotype=str_replace_all(genotype_name, "[:. -]", "") %>%
+                tolower %>%
+                str_replace("tdna", ""),
+            genotype_name=factor(genotype_name, levels=genotype_name))
+
+```
+
+Format the data to be analysed with the `drc` package.
+
+- Filter the data
+- If cumulative count > total count set as total count If the cumulative is
+  below the previous cumulative set it as the previous one (CumGerm at 2PM
+  < CumGerm at 2AM set it to CumGerm at 2AM).
+- Transform counts them as by day progress and not cumulative Transform the time
+  name to the number of hour, discrete to continuous scale.
+- The process require to have the upper and lower bound set for the time: how
+  many seeds germinate since last counting time. So for time 0 the upper bound
+  is set at 1h and lower bound of 0h. For 1AM, lower bound to 1h and upper bound
+  to 1AM (24h). For 1PM, lower bound set to 1AM (24h) and upper bound set to 1PM
+  (32h). Etc...
+- Add and extra time to take into the seeds that did not
+  germinated : lower bound set to 3PM (80h) and upper bound to Inf.
+- Remove the `:` and `.` from the genotype names to prevent any strange
+  behavior (`:` is used as a separating field in the analysis).
+
+```{r data_preparation}
+
+# time between plant out and midnight
+time_shift <- 24 - 10.5 # out at 10h30
+
+# the measurements by themself
+formated_measurements <-
+    raw_data %>%
+    dplyr::select(concentration, genotype, plate_nb, day, total_nb, CumGerm) %>%
+    # filter the time
+    filter(!is.na(plate_nb),
+           !is.na(CumGerm),
+           day %in% c("0", "1AM", "1PM", "2AM", "2PM", "3AM", "3PM")) %>%
+    # Arrange the data so the different times are on following lines per plate
+    # to be able to calculate daily germination
+    arrange(concentration, genotype, day, plate_nb) %>%
+    group_by(concentration, genotype, plate_nb) %>%
+    mutate(
+           # Correct cumulative germination
+           # more germinated seeds than total number of seeds ;)
+           CumGerm=if_else(CumGerm > total_nb, total_nb, CumGerm),
+           # more seeds on previous day.
+           CumGerm=if_else(CumGerm < lag(CumGerm), lag(CumGerm), CumGerm),
+           CumGerm=if_else(is.na(CumGerm), 0, CumGerm),
+           # Calculate the daily germination
+           DailyGerm=CumGerm - lag(CumGerm),
+           # Set the daily germination of time point 0 to 0
+           DailyGerm=if_else(is.na(DailyGerm), 0, DailyGerm)) %>%
+    ungroup %>%
+    mutate(
+           # Clean genotype name
+           genotype=str_replace_all(genotype, "[:.]", ""),
+           # Set the lower bounds of the time intervals
+           timeBef=case_when(
+                   day == "0" ~ 0,
+                   day == "1AM" ~ 1,
+                   day == "1PM" ~ 10.5 + time_shift,
+                   day == "2AM" ~ 18.5 + time_shift,
+                   day == "2PM" ~ 10.5 + 24 + time_shift,
+                   day == "3AM" ~ 18.5 + 24 + time_shift,
+                   day == "3PM" ~ 10.5 + 48 + time_shift
+                   ),
+           # Set the upper bounds of the time intervals
+           timeAf=case_when(
+                   day == "0" ~ 1,
+                   day == "1AM" ~ 10.5 + time_shift,
+                   day == "1PM" ~ 18.5 + time_shift,
+                   day == "2AM" ~ 10.5 + 24 + time_shift,
+                   day == "2PM" ~ 18.5 + 24 + time_shift,
+                   day == "3AM" ~ 10.5 + 48 + time_shift,
+                   day == "3PM" ~ 18.5 + 48 + time_shift
+                   ),
+           # compute a unique plate identification
+           plate_id=str_c(concentration, genotype, plate_nb) %>% as.factor %>% as.numeric)
+
+# The plant that do not germinate
+ungerminated_data <-
+    formated_measurements %>%
+    # Keep only last time point
+    filter(day == "3PM") %>%
+    # remove unneeded columns that will be generated
+    dplyr::select(-(DailyGerm:timeAf)) %>%
+    unique %>%
+    mutate(
+           # The daily germination seeds (the seeds that did not germinated) is
+           # the total number of seeds minus the seeds that already germinated
+           DailyGerm=total_nb - CumGerm,
+           # The cumulative number of seed is all the seeds
+           CumGerm=total_nb,
+           # Set the bound of the time interval
+           timeBef = 18.5 + 48 + time_shift,
+           timeAf = Inf
+           )
+
+# fusion of the data
+formated_data <-
+    bind_rows(formated_measurements, ungerminated_data) %>%
+    arrange(plate_id, timeBef) %>%
+    group_by(plate_id) %>%
+    # Generate a line id that should look like:
+    # 1    for first plate, zero time point
+    # 1.1  for first plate, time point 1
+    # 1.2  ...
+    # ...
+    # 2    for second plate, zero time point
+    # 2.1  for second plate, time point 1
+    # 1.2  ...
+    # ...
+    mutate(rownames=str_c(plate_id, ".", row_number() - 1) %>%
+                str_replace("\\.0", "")
+           ) %>%
+    # Remove unneeded columns
+    dplyr::select(-day, -plate_nb) %>%
+    # transform it as data.frame since `dcr` package do not work with tibble
+    as.data.frame %>%
+    # set the row names with the constructed ID
+    column_to_rownames("rownames")
+
+formated_data %>%
+    head(10)
+
+```
+
+# 0.5 ABA
+
+Parameters significance in the models:
+
+- `Max`: the upper limit being the maximal germination, with an upper limit set
+  at 1 (or 100% of the seed);
+- `T50` is the time taken to reach 50% germination relative to the upper limit.
+- `Slope` could give an indication of how quickly seed germination reaches 
+  completion once the process has begun.
+- `T5` or `T95` (the time required for 5 and 95 percent of the seeds to
+  germinate, respectively) can also be estimated in relation to the upper limit.
+
+## Model fitting
+
+Compare and model with 3 parameters and 2 parameters (maximum set to 1).
+
+```{r model_comparison}
+
+mod_05_LL3 <- 
+    drc::drm(DailyGerm ~ timeBef + timeAf,
+             curveid = genotype,
+             data = formated_data,
+             fct = LL.3(names=c("Slope", "Max", "T50")),
+             type = "event", subset=c(concentration == 0.5))
+plot(mod_05_LL3, log = "", legendPos = c(80, .5),
+     ylab="Proportion of germinated seed", xlab="Time (h)", main="0.5 ABA")
+summary(mod_05_LL3)
+
+mod_05_LL2 <- 
+    drc::drm(DailyGerm ~ timeBef + timeAf,
+             curveid = genotype,
+             data = formated_data,
+             fct = LL.2(names=c("Slope", "T50")),
+             type = "event", subset=c(concentration == 0.5))
+# Add this model to the plot in red
+plot(mod_05_LL2, log = "", type = "none", legendPos = c(80, .5), col=c(2), add=TRUE)
+summary(mod_05_LL2)
+
+anova(mod_05_LL3, mod_05_LL2, test = "Chisq")
+
+```
+
+There is difference between the two model. The main difference being the
+maximum, we can speculate that the max is not 1 (not all the seed germinate)
+
+## Global genotype effect
+
+We can then wonder if there is a global effect of the genotype. We compare
+a model where there a genotype effect with one were there is none.
+
+```{r modNull_05_LL3}
+
+modNull_05_LL3 <- 
+    drc::drm(DailyGerm ~ timeBef + timeAf,
+             data = formated_data,
+             fct = LL.3(names=c("Slope", "Max", "T50")),
+             type = "event", subset=c(concentration == 0.5),
+             upperl=c(NA,1,NA))
+plot(mod_05_LL3, log = "", legendPos = c(80, .5),
+     ylab="Proportion of germinated seed", xlab="Time (h)", main="0.5 ABA")
+plot(modNull_05_LL3, log = "", type = "none", legendPos = c(80, .5), col=c(3), add=TRUE)
+
+anova(mod_05_LL3, modNull_05_LL3, test = "Chisq")
+```
+In that case we specify the maximum value for `Max` to 1 otherwise the model
+fitting crash. We do not put it on the previous LL3 model for same raison.
+
+```{r modNull_05_LL2}
+
+modNull_05_LL2 <- 
+    drc::drm(DailyGerm ~ timeBef + timeAf,
+             data = formated_data,
+             fct = LL.2(names=c("Slope", "T50")),
+             type = "event", subset=c(concentration == 0.5))
+plot(mod_05_LL2, log = "", legendPos = c(80, .5),
+     ylab="Proportion of germinated seed", xlab="Time (h)", main="0.5 ABA")
+plot(modNull_05_LL2, log = "", type = "none", legendPos = c(80, .5), col=c(4), add=TRUE)
+
+anova(mod_05_LL2, modNull_05_LL2, test = "Chisq")
+
+```
+
+Strong differences for both null models.
+
+## Model comparison
+
+Which one the best? Use the AIC and BIC criteria:
+
+```{r model_choice}
+
+AIC(mod_05_LL3, mod_05_LL2, modNull_05_LL3, modNull_05_LL2)
+BIC(mod_05_LL3, mod_05_LL2, modNull_05_LL3, modNull_05_LL2)
+
+```
+> Lower figures are better. We keep the LL3 model.
+
+## Classical time estimation
+
+Estimation of T05, T50 and T95:
+
+```{r}
+
+ED(mod_05_LL3, c(5,50,95), interval="delta")
+
+```
+
+Coefficient of variation of the different parameters in percent of the measure.
+Lower is better:
+
+```{r}
+
+ED(mod_05_LL2,c(50),display=FALSE)[,2]*100/ED(mod_05_LL2,c(50),display=FALSE)[,1]
+ED(mod_05_LL2,c(5),display=FALSE)[,2]*100/ED(mod_05_LL2,c(5),display=FALSE)[,1]
+ED(mod_05_LL2,c(95),display=FALSE)[,2]*100/ED(mod_05_LL2,c(95),display=FALSE)[,1]
+
+```
+
+The best estimate is for T50.
+
+## Comparison of the parameters
+
+Direct model parameter comparison using the `compParm()` function. We use the
+name we defined previously.
+
+### Maximum germination rate
+
+Comparison of the maximum rate of germination
+
+```{r Max_comp_05}
+
+compParm(mod_05_LL3, "Max")
+
+```
+
+No statistical difference. A lower rate of germination almost significant for RNAi 9.2.
+
+### Slope
+
+We compare the "Slope" that is the "vigor" of germination. 
+
+```{r slope_comp_05}
+
+slope_comp_05 <-
+    compParm(mod_05_LL3, "Slope")
+
+```
+We have a small difference with Col compared to the others. We use multcompLetters to build the letter group after
+adjusting for multi-testing (FDR)
+
+```{r slope_comp_letter_05}
+
+slope_comp_letters_05 <- 
+    slope_comp_05[,"p-value"] %>%
+    p.adjust(method="fdr") %>%
+    setNames(str_replace(names(.), "/", "-")) %>%
+    multcompLetters
+slope_comp_letters_05$Letters
+
+slope_comp_letters_05 <- 
+    slope_comp_05[,"p-value"] %>%
+    setNames(str_replace(names(.), "/", "-")) %>%
+    multcompLetters
+slope_comp_letters_05$Letters
+
+```
+If we correct with FDR, no difference.
+Combine the total for a nice graph for variation of slope.
+
+```{r slope_stats_05}
+
+slope_stats_05 <-
+    coef(summary(mod_05_LL2))[,1:2] %>%
+    as.data.frame %>%
+    rownames_to_column("parameters") %>%
+    separate(parameters, c("parameter", "genotype"), sep=':') %>%
+    filter(parameter == "Slope") %>%
+    dplyr::select(genotype, slope=Estimate, se=`Std. Error`) %>%
+    left_join(slope_comp_letters_05$Letters %>%
+              as.data.frame %>%
+              setNames("letters") %>%
+              rownames_to_column("genotype")) %>%
+    mutate(slope=-slope) %>%
+    left_join(genotype_info)
+
+```
+
+And the graph itself
+
+```{r}
+
+shift <- max(slope_stats_05$se + slope_stats_05$slope) * .05
+
+ggplot(data = slope_stats_05, aes(x = genotype_name, y = slope, fill=genotype_name)) +
+    geom_col() +
+    geom_errorbar(aes(ymin = slope - se, ymax = slope + se), width=.2) +
+    geom_text(aes(y=slope + se + shift, label=letters)) +
+    scale_fill_brewer(palette="Set2") +
+    xlab("") + ylab("Speed of germination at T50 (proportion/hour)") +
+    ggtitle("0.5 ABA")
+
+```
+
+Interestingly the mutation of *MHAL* seems to decrease the slope (not significant).
+
+### T50
+
+We then test T50, that it the time for the seeds to germinate at 50%.
+
+```{r t50_comp_05}
+
+T50_comp_05 <-
+    compParm(mod_05_LL3, "T50")
+
+```
+
+Here are the real differences.
+- Col compared to every body
+- mrn1 mutant different from the rest
+- no difference between the 2 RNAi and the 35S:MRN1
+
+Other differences exist. We use `multcompLetters` to build the letter group after
+adjusting for multi-testing (FDR)
+
+```{r t50_comp_letter_05}
+
+T50_comp_letters_05 <- 
+    T50_comp_05[,"p-value"] %>%
+    p.adjust(method="fdr") %>%
+    setNames(str_replace(names(.), "/", "-")) %>%
+    multcompLetters
+T50_comp_letters_05
+
+```
+
+Combine the total for a nice graph for variation of T50.
+
+```{r T50_stats_05}
+
+T50_stats_05 <-
+    coef(summary(mod_05_LL3))[,1:2] %>%
+    as.data.frame %>%
+    rownames_to_column("parameters") %>%
+    separate(parameters, c("parameter", "genotype"), sep=':') %>%
+    filter(parameter == "T50") %>%
+    dplyr::select(genotype, T50=Estimate, se=`Std. Error`) %>%
+    left_join(T50_comp_letters_05$Letters %>%
+              as.data.frame %>%
+              setNames("letters") %>%
+              rownames_to_column("genotype")) %>%
+    left_join(genotype_info)
+
+```
+
+And the graph itself
+
+```{r}
+
+shift <- max(T50_stats_05$se + T50_stats_05$T50) * .05
+
+ggplot(data = T50_stats_05, aes(x = genotype_name, y = T50, fill=genotype_name)) +
+    geom_col() +
+    geom_errorbar(aes(ymin = T50 - se, ymax = T50 + se), width=.2) +
+    geom_text(aes(y=T50 + se + shift, label=letters)) +
+    scale_fill_brewer(palette="Set2") +
+    xlab("") + ylab("Time to 50% of germination (hour)") +
+    ggtitle("0.5 ABA")
+
+```
+
+# 0 ABA
+
+## 3 parameters model fitting
+
+```{r LL3_00, error=TRUE}
+
+mod_00_LL3 <- 
+    drc::drm(DailyGerm ~ timeBef + timeAf,
+             curveid = genotype,
+             data = formated_data,
+             fct = LL.3(names=c("Slope", "Max", "T50")),
+             type = "event", subset=c(concentration == 0)
+    )
+
+```
+The classical logistic model failed to fit. Certainly because the germination
+occur too fast. We can use the `Weibull` function that at the difference of the
+logistic model is not symmetric compared to the inflexion point (T50).
+
+Two types of model, first type 1
+
+```{r W13_00, error=TRUE}
+
+mod_00_W13 <- 
+    drc::drm(DailyGerm ~ timeBef + timeAf,
+             curveid = genotype,
+             data = formated_data,
+             fct = W1.3(names=c("Slope", "Max", "T50")),
+             type = "event", subset=c(concentration == 0),
+             upperl=c(NA,1,NA)
+    )
+
+```
+
+Still failed, let try the type 2.
+
+```{r W23_00, error=TRUE}
+
+mod_00_W23 <- 
+    drc::drm(DailyGerm ~ timeBef + timeAf,
+             curveid = genotype,
+             data = formated_data,
+             fct = W2.3(names=c("Slope", "Max", "T50")),
+             type = "event", subset=c(concentration == 0)
+    )
+
+```
+No change no possibility to fit a model with 3 parameters (variable Maximum of
+germination).
+
+## 2 parameters model fitting
+
+We will try with a 2 parameters model were the maximum is fixed and set at 1.
+In a 2 parameter the max is set to 1.
+
+```{r LL2_00, error=TRUE}
+
+mod_00_LL2 <- 
+    drc::drm(DailyGerm ~ timeBef + timeAf,
+             curveid = genotype,
+             data = formated_data,
+             fct = LL.2(names=c("Slope", "T50")),
+             type = "event", subset=c(concentration == 0))
+
+```
+
+The logistic model failed. We try the Weibull type 1
+
+```{r W12_00, error=TRUE}
+
+mod_00_W12 <- 
+    drc::drm(DailyGerm ~ timeBef + timeAf,
+             curveid = genotype,
+             data = formated_data,
+             fct = W1.2(names=c("Slope", "T50")),
+             type = "event", subset=c(concentration == 0))
+
+```
+
+Failed again, so we test the Weibull type 2 model.
+
+```{r W22_00}
+
+mod_00_W22 <- 
+    drc::drm(DailyGerm ~ timeBef + timeAf,
+             curveid = genotype,
+             data = formated_data,
+             fct = W2.2(names=c("Slope", "T50")),
+             type = "event", subset=c(concentration == 0))
+plot(mod_00_W22, log = "", legendPos = c(80, .5),
+     ylab="Proportion of germinated seed", xlab="Time (h)", main="0.5 ABA")
+summary(mod_00_W22)
+
+```
+
+## Global effect
+
+Again we check the difference with the null model.
+
+```{r modNull_00_W22, error=TRUE}
+
+modNull_00_W22 <- 
+    drc::drm(DailyGerm ~ timeBef + timeAf,
+             data = formated_data,
+             fct = W2.2(names=c("Slope", "T50")),
+             type = "event", subset=c(concentration == 0))
+
+```
+
+The null model failed. Let continue.
+
+## Classical time estimation
+
+
+Estimation of T05, T50 and T95:
+
+```{r}
+
+ED(mod_00_W22, c(5,50,95), interval="delta")
+
+```
+
+Coefficient of variation of the different parameters in percent of the mesure.
+Lower is better:
+
+```{r}
+
+ED(mod_00_W22,c(50),display=FALSE)[,2]*100/ED(mod_00_W22,c(50),display=FALSE)[,1]
+ED(mod_00_W22,c(5),display=FALSE)[,2]*100/ED(mod_00_W22,c(5),display=FALSE)[,1]
+ED(mod_00_W22,c(95),display=FALSE)[,2]*100/ED(mod_00_W22,c(95),display=FALSE)[,1]
+
+```
+
+This time the better estimate is at 95% of germination. To have better estimates
+we will need to have a better time resolution kinetic, especially in the short
+times.
+
+## Comparison of the parameters
+
+Direct model parameter comparison using the `compParm()` function. We use the
+name we defined previously.
+
+### Slope
+
+We compare the "Slope" that is the "vigor" of germination. 
+
+```{r slope_comp_00}
+
+slope_comp_00 <-
+    compParm(mod_00_W22, "Slope")
+
+```
+This time it seems that the difference is with RNAi 3.8. We use multcompLetters to build the letter group after
+adjusting for multi-testing (FDR)
+
+```{r slope_comp_letter_00}
+
+slope_comp_letters_00 <- 
+    slope_comp_00[,"p-value"] %>%
+    p.adjust(method="fdr") %>%
+    setNames(str_replace(names(.), "/", "-")) %>%
+    multcompLetters
+slope_comp_letters_00$Letters
+
+```
+Combine the total for a nice graph for variation of slope.
+
+```{r slope_stats_00}
+
+slope_stats_00 <-
+    coef(summary(mod_00_LL2))[,1:2] %>%
+    as.data.frame %>%
+    rownames_to_column("parameters") %>%
+    separate(parameters, c("parameter", "genotype"), sep=':') %>%
+    filter(parameter == "Slope") %>%
+    dplyr::select(genotype, slope=Estimate, se=`Std. Error`) %>%
+    left_join(slope_comp_letters_00$Letters %>%
+              as.data.frame %>%
+              setNames("letters") %>%
+              rownames_to_column("genotype")) %>%
+    left_join(genotype_info)
+
+```
+
+And the graph itself
+
+```{r}
+
+shift <- max(slope_stats_00$se + slope_stats_00$slope) * .05
+
+ggplot(data = slope_stats_00, aes(x = genotype_name, y = slope, fill=genotype_name)) +
+    geom_col() +
+    geom_errorbar(aes(ymin = slope - se, ymax = slope + se), width=.2) +
+    geom_text(aes(y=slope + se + shift, label=letters)) +
+    scale_fill_brewer(palette="Set2") +
+    xlab("") + ylab("Speed of germination at T50 (proportion/hour)") +
+    ggtitle("0 ABA")
+
+```
+
+### T50
+
+We then test T50, that it the time for the seeds to germination
+
+Finally the T50, that it the time for the seeds to germinate at 50%.
+
+```{r t50_comp_00}
+
+T50_comp_00 <-
+    compParm(mod_00_LL2, "T50")
+
+```
+
+Again difference with Col and the different RNAi. We use `multcompLetters` to build the letter group after
+adjusting for multi-testing (FDR)
+
+```{r t50_comp_letter_00}
+
+T50_comp_letters_00 <- 
+    T50_comp_00[,"p-value"] %>%
+    p.adjust(method="fdr") %>%
+    setNames(str_replace(names(.), "/", "-")) %>%
+    multcompLetters
+T50_comp_letters_00
+
+```
+
+Combine the total for a nice graph for variation of T50.
+
+```{r T50_stats_00}
+
+T50_stats_00 <-
+    coef(summary(mod_00_W22))[,1:2] %>%
+    as.data.frame %>%
+    rownames_to_column("parameters") %>%
+    separate(parameters, c("parameter", "genotype"), sep=':') %>%
+    filter(parameter == "T50") %>%
+    dplyr::select(genotype, T50=Estimate, se=`Std. Error`) %>%
+    left_join(T50_comp_letters_00$Letters %>%
+              as.data.frame %>%
+              setNames("letters") %>%
+              rownames_to_column("genotype")) %>%
+    left_join(genotype_info)
+
+```
+
+And the graph itself
+
+```{r}
+
+shift <- max(T50_stats_00$se + T50_stats_00$T50) * .05
+
+ggplot(data = T50_stats_00, aes(x = genotype_name, y = T50, fill=genotype_name)) +
+    geom_col() +
+    geom_errorbar(aes(ymin = T50 - se, ymax = T50 + se), width=.2) +
+    geom_text(aes(y=T50 + se + shift, label=letters)) +
+    scale_fill_brewer(palette="Set2") +
+    xlab("") + ylab("Time to 50% of germination (hour)") +
+    ggtitle("0.5 ABA")
+
+```
+
+# References

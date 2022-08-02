@@ -1,0 +1,371 @@
+---
+title: "Compute correlation analysis in the different clusters (1000 random)"
+output:
+    html_document:
+        toc: TRUE
+meta:
+    exp_id: 20211104_01_lncRNAsExpressionCorrelation_1000
+    type: analyse
+    modules:
+        - R/4.1
+---
+
+# Environment setup
+
+```{r setup}
+
+library(tidyverse)
+library(ggpubr)
+library(rstatix)
+
+theme_set(theme_bw())
+
+```
+
+## Max lncRNA/coding correlation all genes
+
+```{r}
+
+coexp_summary <-
+    read_tsv("data/clusters/random_1000/coexp_lncRNA_max_corr.tsv")
+
+coexp_summary %>%
+    group_by(cluster_type) %>%
+    summarise(value=quantile(corr)) %>%
+    bind_cols(quantile=rep(c(0,.25,.5,.75,1), 3)) %>%
+    pivot_wider(names_from="quantile", values_from="value") %>%
+    knitr::kable()
+
+
+ttest_summary <-
+    t_test(corr ~ cluster_type, data=ungroup(coexp_summary)) %>%
+    add_xy_position(x="cluster_type", step.increase = .7)
+graph <-
+    coexp_summary %>%
+    ggplot(aes(x=cluster_type, y=corr)) +
+    geom_violin() +
+    geom_boxplot(width = .2, outlier.shape = NA) +
+    stat_pvalue_manual(ttest_summary, label = "p.adj", 
+                       bracket.size=.5) +
+    xlab("") + 
+    ylab("maximum lncRNA correlation")
+print(graph)
+
+ggsave("out/coexp_violin_max_lncRNA_correlation.pdf",
+       plot = graph, width = 4, height = 5)
+```
+
+## Max lncRNA/coding correlation no poorly detected genes
+
+```{r}
+
+coexp_summary <-
+    read_tsv("data/clusters/random_1000/coexp_lncRNA_max_corr_no_poorly_detected.tsv")
+
+coexp_summary %>%
+    group_by(cluster_type) %>%
+    summarise(value=quantile(corr)) %>%
+    bind_cols(quantile=rep(c(0,.25,.5,.75,1), 3)) %>%
+    pivot_wider(names_from="quantile", values_from="value") %>%
+    knitr::kable()
+
+
+ttest_summary <-
+    t_test(corr ~ cluster_type, data=ungroup(coexp_summary)) %>%
+    add_xy_position(x="cluster_type", step.increase = .5)
+
+coexp_summary$cluster_type <-
+  factor(coexp_summary$cluster_type,
+         c("random","full_coexp","coexp"))
+
+graph <-
+    coexp_summary%>%
+    ggplot(aes(x=cluster_type, y=corr)) +
+    geom_violin() +
+    geom_boxplot(width = .2, outlier.shape = NA) +
+    stat_pvalue_manual(ttest_summary, label = "p.adj", 
+                       bracket.size=.5) +
+    xlab("") + 
+    ylab("maximum lncRNA correlation")
+print(graph)
+
+ggsave("out/clusters/1000/coexp_violin_max_lncRNA_correlation_no_poorly_detected.pdf",
+       plot = graph, width = 5, height = 4)
+```
+
+##  Median cluster coding gene coexpression
+
+```{r}
+
+coexp_summary <-
+    read_tsv("data/clusters/random_1000/coexp_coding_corr.tsv") %>%
+    mutate(group=str_c(cluster_type, lncRNA_cluster))
+
+coexp_summary %>%
+    group_by(cluster_type, lncRNA_cluster) %>%
+    summarise(value=quantile(median_corr)) %>%
+    bind_cols(quantile=rep(c(0,.25,.5,.75,1), 6)) %>%
+    pivot_wider(names_from="quantile", values_from="value") %>%
+    knitr::kable()
+
+ttest_summary <-
+    coexp_summary %>%
+    group_by(cluster_type) %>%
+    t_test(median_corr ~ group) %>%
+    # since test on group we need to apply multitest correction afterwards
+    adjust_pvalue() %>%
+    add_significance() %>%
+    add_xy_position(x="group", step.increase = .7)
+
+graph <-
+    coexp_summary %>%
+    ggplot(aes(x=group, y=median_corr)) +
+    geom_violin(position=position_dodge(.9), scale="width", aes(fill=lncRNA_cluster)) +
+    geom_boxplot(width = .2, position=position_dodge(.9), outlier.shape = NA, aes(fill=lncRNA_cluster)) +
+    scale_fill_brewer(palette= "Accent") +
+    stat_pvalue_manual(ttest_summary, label = "p.adj", 
+                       bracket.size=.5) +
+    xlab("") + 
+    ylab("median lncRNA correlation")
+print(graph)
+
+ggsave("out/coexp_violin_median_cluster_correlation.pdf",
+       plot = graph, width = 6, height = 5)
+```
+
+## Median coding gene co-expression no poorly detected genes
+
+```{r}
+
+coexp_summary <-
+    read_tsv("data/clusters/random_1000/coexp_coding_corr_no_poorly_detected.tsv") %>%
+    mutate(group=str_c(cluster_type, lncRNA_cluster))
+
+coexp_summary %>%
+    group_by(cluster_type, lncRNA_cluster) %>%
+    summarise(value=quantile(median_corr)) %>%
+    bind_cols(quantile=rep(c(0,.25,.5,.75,1), 6)) %>%
+    pivot_wider(names_from="quantile", values_from="value") %>%
+    knitr::kable()
+
+ttest_summary <-
+    coexp_summary %>%
+    group_by(cluster_type) %>%
+    t_test(median_corr ~ group) %>%
+    # since test on group we need to apply multitest correction afterwards
+    adjust_pvalue(method = "fdr") %>%
+    add_significance() %>%
+    add_xy_position(x="group", step.increase = .7)
+
+coexp_summary$group <-
+  factor(coexp_summary$group,
+         c("randomFALSE","randomTRUE","full_coexpFALSE","full_coexpTRUE","coexpFALSE","coexpTRUE"))
+
+
+graph <-
+    coexp_summary %>%
+    ggplot(aes(x=group, y=median_corr)) +
+    geom_violin(position=position_dodge(.9), scale="width", aes(fill=lncRNA_cluster)) +
+    geom_boxplot(width = .2, position=position_dodge(.9), outlier.shape = NA, aes(fill=lncRNA_cluster)) +
+    scale_fill_brewer(palette= "Accent") +
+    stat_pvalue_manual(ttest_summary, label = "p.adj", 
+                       bracket.size=.5) +
+    xlab("") + 
+    ylab("median lncRNA correlation")+
+  theme(axis.text.x  = element_text(angle=45, vjust=1, hjust=1, size=10))
+print(graph)
+
+ggsave("out/clusters/1000/coexp_violin_median_cluster_correlation_no_poorly_detected.pdf",
+       plot = graph, width = 6, height = 5)
+
+```
+
+# plantiSMASH clusters
+
+```{r plantiSMASHcluster_analysis}
+
+MRN_cluster <- "Cluster 39_0"
+
+```
+
+## Max lncRNA/coding gene correlation
+
+```{r}
+
+plantiSMASH_summary <-
+    read_tsv("data/clusters/random_1000/plantiSMASH_lncRNA_max_corr.tsv")
+
+plantiSMASH_summary %>%
+    group_by(cluster_type) %>%
+    summarise(value=quantile(corr)) %>%
+    bind_cols(quantile=rep(c(0,.25,.5,.75,1), 2)) %>%
+    pivot_wider(names_from="quantile", values_from="value") %>%
+    knitr::kable()
+
+MRN_cluster_info <-
+    plantiSMASH_summary %>%
+    filter(cluster_name == MRN_cluster) %>%
+    mutate(cluster_name="marneral cluster")
+
+graph <-
+    plantiSMASH_summary %>%
+    ggplot(aes(x=cluster_type, y=corr)) +
+    geom_violin() +
+    geom_boxplot(width = .2, outlier.shape = NA) +
+    geom_point(data=MRN_cluster_info, color="red") +
+    geom_text(data=MRN_cluster_info, color="red", aes(label=cluster_name),
+              vjust=-1) +
+    stat_compare_means(method="t.test",
+                       comparisons=list(c("random", "plantiSMASH")),
+                       label="p.value",
+                       bracket.size=.5) +
+    xlab("") + 
+    ylab("maximum lncRNA correlation")
+print(graph)
+
+ggsave("out/plantiSMASH_violin_max_lncRNA_correlation.pdf",
+       plot = graph, width = 3, height = 2.5)
+```
+
+## Max lncRNA/coding gene correlation non poorly detected genes
+
+```{r}
+
+plantiSMASH_summary <-
+    read_tsv("data/clusters/random_1000/plantiSMASH_lncRNA_max_corr_no_poorly_detected.tsv")
+
+plantiSMASH_summary %>%
+    group_by(cluster_type) %>%
+    summarise(value=quantile(corr)) %>%
+    bind_cols(quantile=rep(c(0,.25,.5,.75,1), 2)) %>%
+    pivot_wider(names_from="quantile", values_from="value") %>%
+    knitr::kable()
+
+MRN_cluster_info <-
+    plantiSMASH_summary %>%
+    filter(cluster_name == MRN_cluster) %>%
+    mutate(cluster_name="marneral cluster")
+
+
+plantiSMASH_summary$cluster_type <-
+  factor(plantiSMASH_summary$cluster_type,
+         c("random","plantiSMASH"))
+
+graph <-
+    plantiSMASH_summary %>%
+    ggplot(aes(x=cluster_type, y=corr)) +
+    geom_violin() +
+    geom_boxplot(width = .2, outlier.shape = NA) +
+    geom_point(data=MRN_cluster_info, color="red") +
+    geom_text(data=MRN_cluster_info, color="red", aes(label=cluster_name),
+              vjust=-1) +
+    stat_compare_means(method = "t.test",
+                       comparisons=list(c("random", "plantiSMASH")),
+                       label="p.value",
+                       bracket.size=.5) +
+    xlab("") + 
+    ylab("maximum lncRNA correlation")
+print(graph)
+
+ggsave("out/clusters/1000/plantiSMASH_violin_max_lncRNA_correlation_no_poorly_detected.pdf",
+       plot = graph, width = 3, height = 4)
+```
+
+## Median cluster coding gene correlation
+
+```{r}
+
+plantiSMASH_summary <-
+    read_tsv("data/clusters/random_1000/plantiSMASH_coding_corr.tsv") %>%
+    mutate(group=str_c(cluster_type, lncRNA_cluster))
+
+plantiSMASH_summary %>%
+    group_by(cluster_type, lncRNA_cluster) %>%
+    summarise(value=quantile(median_corr)) %>%
+    bind_cols(quantile=rep(c(0,.25,.5,.75,1), 4)) %>%
+    pivot_wider(names_from="quantile", values_from="value") %>%
+    knitr::kable()
+
+MRN_cluster_info <-
+    plantiSMASH_summary %>%
+    filter(cluster_name == MRN_cluster) %>%
+    mutate(cluster_name="marneral\ncluster")
+
+ttest_summary <-
+    plantiSMASH_summary %>%
+    group_by(cluster_type) %>%
+    t_test(median_corr ~ group) %>%
+    # since test on group we need to apply multitest correction afterwards
+    adjust_pvalue() %>%
+    add_significance() %>%
+    add_xy_position(x="group", step.increase = .7)
+
+graph <-
+    plantiSMASH_summary %>%
+    ggplot(aes(x=group, y=median_corr)) +
+    geom_violin(position=position_dodge(.9), scale="width", aes(fill=lncRNA_cluster)) +
+    geom_boxplot(width = .2, position=position_dodge(.9), outlier.shape = NA, aes(fill=lncRNA_cluster)) +
+    geom_point(data=MRN_cluster_info, color="red") +
+    scale_fill_brewer(palette= "Accent") +
+    stat_pvalue_manual(ttest_summary, label = "p.adj", 
+                       bracket.size=.5) +
+    xlab("") + 
+    ylab("median lncRNA correlation")
+print(graph)
+
+ggsave("out/plantiSMASH_violin_median_cluster_correlation.pdf",
+       plot = graph, width = 4, height = 5)
+```
+
+## Median cluster coding gene correlation no poorly detected genes
+
+```{r}
+
+plantiSMASH_summary <-
+    read_tsv("data/clusters/random_1000/plantiSMASH_coding_corr_no_poorly_detected.tsv") %>%
+    mutate(group=str_c(cluster_type, lncRNA_cluster))
+
+plantiSMASH_summary %>%
+    group_by(cluster_type, lncRNA_cluster) %>%
+    summarise(value=quantile(median_corr)) %>%
+    bind_cols(quantile=rep(c(0,.25,.5,.75,1), 4)) %>%
+    pivot_wider(names_from="quantile", values_from="value") %>%
+    knitr::kable()
+
+MRN_cluster_info <-
+    plantiSMASH_summary %>%
+    filter(cluster_name == MRN_cluster) %>%
+    mutate(cluster_name="marneral\ncluster")
+
+ttest_summary <-
+    plantiSMASH_summary %>%
+    group_by(cluster_type) %>%
+    t_test(median_corr ~ group) %>%
+    # since test on group we need to apply multitest correction afterwards
+    adjust_pvalue(method = "fdr") %>%
+    add_significance() %>%
+    add_xy_position(x="group", step.increase = .7)
+
+
+plantiSMASH_summary$group <-
+  factor(plantiSMASH_summary$group,
+         c("randomFALSE","randomTRUE","plantiSMASHFALSE","plantiSMASHTRUE"))
+
+graph <-
+    plantiSMASH_summary %>%
+    ggplot(aes(x=group, y=median_corr)) +
+    geom_violin(position=position_dodge(.9), scale="width", aes(fill=lncRNA_cluster)) +
+    geom_boxplot(width = .2, position=position_dodge(.9), outlier.shape = NA, aes(fill=lncRNA_cluster)) +
+        geom_point(data=MRN_cluster_info, color="red") +
+    scale_fill_brewer(palette= "Set1") +
+    stat_pvalue_manual(ttest_summary, label = "p.adj", 
+                       bracket.size=.5) +
+    xlab("") + 
+    ylab("median lncRNA correlation")+
+    ylim(-0.5,1)
+print(graph)
+
+ggsave("out/clusters/1000/plantiSMASH_violin_median_cluster_correlation_no_poorly_detected.pdf",
+       plot = graph, width = 5, height = 4)
+```
+
