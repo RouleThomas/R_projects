@@ -1344,7 +1344,7 @@ my_graph
 
 # Test H3K27me3 AB direct method Arabidopsps well cross link (Glass Bell) ----
 
-Arabidopsis_H3K27me3_pl1 <- read_excel("ChIP/in/Arabidopsis_Millipore_H3K27me3_pl1.xls") %>%
+Arabidopsis_H3K27me3_pl1 <- read_excel("2022_PostDoc_PreliminaryWorks/R/ChIP/in/Arabidopsis_Millipore_Thermo_GlassBell_H3K27me3_pl1.xls") %>%
   select(-Pos)
 
 
@@ -1360,32 +1360,37 @@ GFP_testAB_qPCR_IP_input <- Arabidopsis_H3K27me3_pl1 %>%
   left_join(GFP_testAB_qPCR_input)
 
 
-IP_input_H3 <- GFP_testAB_qPCR_IP_input %>% 
-  filter(condition == "H3") %>%
-  mutate(H3 = 2^-(Cp-Cp_input)*100) %>%
+IP_input_IGG <- GFP_testAB_qPCR_IP_input %>% 
+  filter(condition == "IgG") %>%
+  mutate(IgG = 2^-(Cp-Cp_input)*100) %>%
   dplyr::select(-Cp, -Cp_input,-condition)%>% 
-  pivot_longer(H3, names_to = "Antibody", values_to = "% input")
+  pivot_longer(IgG, names_to = "Antibody", values_to = "% input")
 
-IP_input_H3K27me3 <- GFP_testAB_qPCR_IP_input %>% 
-  filter(condition %in% c("H3K27me3")) %>%
-  mutate(H3K27me3 = 2^-(Cp-Cp_input)*100) %>%
+IP_input_H3K27me3MP <- GFP_testAB_qPCR_IP_input %>% 
+  filter(condition %in% c("H3K27me3_Millipore")) %>%
+  mutate(H3K27me3MP = 2^-(Cp-Cp_input)*100) %>%
   dplyr::select(-Cp, -Cp_input,-condition)%>% 
-  pivot_longer(H3K27me3, names_to = "Antibody", values_to = "% input")
+  pivot_longer(H3K27me3MP, names_to = "Antibody", values_to = "% input")
+IP_input_H3K27me3Thermo <- GFP_testAB_qPCR_IP_input %>% 
+  filter(condition %in% c("H3K27me3_Thermo")) %>%
+  mutate(H3K27me3Thermo = 2^-(Cp-Cp_input)*100) %>%
+  dplyr::select(-Cp, -Cp_input,-condition)%>% 
+  pivot_longer(H3K27me3Thermo, names_to = "Antibody", values_to = "% input")
 
 
-IP_all <- IP_input_H3 %>%
-  bind_rows(IP_input_H3K27me3)
+IP_all <- IP_input_IGG %>%
+  bind_rows(IP_input_H3K27me3MP) %>%
+  bind_rows(IP_input_H3K27me3Thermo)
 
 
 
-IP_all$gene <- factor(IP_all$gene, levels=c("MRN1", "FT", "Actin2", "ActinCourtney", "PP2A", "YUCCA7"))
+IP_all$gene <- factor(IP_all$gene, levels=c("Actin2", "ActinCourtney", "MRN1", "FT"))
 
 
 my_graph <- 
   IP_all %>%
-  filter(gene%in% c("MRN1", "FT", "Actin2", "ActinCourtney")) %>%
-  ggbarplot(., x = "gene", y = "% input",add = "mean_se", fill="Antibody", position=position_dodge()) +
-  facet_wrap(~Antibody, scale="free")+
+  filter(gene%in% c("Actin2", "ActinCourtney", "MRN1", "FT")) %>%
+  ggbarplot(., x = "gene", y = "% input",add = "mean_se", fill="Antibody", position=position_dodge(.7)) +
   theme_bw() 
 my_graph
 
