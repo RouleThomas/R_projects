@@ -1394,3 +1394,56 @@ my_graph <-
   theme_bw() 
 my_graph
 
+# Test H3K27me3 AB millipore direct method Rice well cross link (Glass Bell) ----
+
+Arabidopsis_H3K27me3_pl1 <- read_excel("2022_PostDoc_PreliminaryWorks/R/ChIP/in/Rice_MilliporeH3K27me3_pl1_20220812.xls") %>%
+  select(-Pos)
+
+
+
+GFP_testAB_qPCR_input <- Arabidopsis_H3K27me3_pl1 %>% 
+  filter(condition == "input") %>%
+  mutate(Cp=Cp-log2(5)) %>%
+  mutate(Cp_input=Cp) %>%
+  dplyr::select(-Cp, -condition)
+
+GFP_testAB_qPCR_IP_input <- Arabidopsis_H3K27me3_pl1 %>% 
+  filter(condition != "input") %>%
+  left_join(GFP_testAB_qPCR_input)
+
+
+IP_input_IGG <- GFP_testAB_qPCR_IP_input %>% 
+  filter(condition == "IGG") %>%
+  mutate(IGG = 2^-(Cp-Cp_input)*100) %>%
+  dplyr::select(-Cp, -Cp_input,-condition)%>% 
+  pivot_longer(IGG, names_to = "Antibody", values_to = "% input")
+
+IP_input_H3K27me3 <- GFP_testAB_qPCR_IP_input %>% 
+  filter(condition %in% c("H3K27me3")) %>%
+  mutate(H3K27me3 = 2^-(Cp-Cp_input)*100) %>%
+  dplyr::select(-Cp, -Cp_input,-condition)%>% 
+  pivot_longer(H3K27me3, names_to = "Antibody", values_to = "% input")
+
+
+
+IP_all <- IP_input_IGG %>%
+  bind_rows(IP_input_H3K27me3)
+
+
+
+
+my_graph <- 
+  IP_all %>%
+  ggbarplot(., x = "gene", y = "% input",add = "mean_se", fill="Antibody", position=position_dodge(.7)) +
+  theme_bw() 
+my_graph
+
+
+
+
+
+
+
+
+
+
