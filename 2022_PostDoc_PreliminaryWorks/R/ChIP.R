@@ -1399,6 +1399,9 @@ my_graph
 Arabidopsis_H3K27me3_pl1 <- read_excel("2022_PostDoc_PreliminaryWorks/R/ChIP/in/Rice_MilliporeH3K27me3_pl1_20220812.xls") %>%
   select(-Pos)
 
+Arabidopsis_H3K27me3_pl1 <- read_excel("2022_PostDoc_PreliminaryWorks/R/ChIP/in/Rice_MilliporeH3K27me3_pl2_20220819.xls") %>%
+  select(-Pos)
+
 
 
 GFP_testAB_qPCR_input <- Arabidopsis_H3K27me3_pl1 %>% 
@@ -1439,7 +1442,8 @@ my_graph <-
 my_graph
 
 
-
+# Rice genes organs from Wang et al 2015 ----
+## https://doi.org/10.1111/tpj.13018
 
 
 
