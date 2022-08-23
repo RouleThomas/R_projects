@@ -1442,11 +1442,73 @@ my_graph <-
 my_graph
 
 
+IP_all$gene <- factor(IP_all$gene, levels=c("ActinNA", "LOC_Os01g51260-P0", "DL-P2-F", "OsYAB4-P3-F", "OsMADS1", "MADS34", "MADS22"))
+
+
+my_graph <- 
+  IP_all %>%
+  filter(gene %in% c("ActinNA", "LOC_Os01g51260-P0", "DL-P2-F", "OsYAB4-P3-F", "OsMADS1", "MADS34", "MADS22"))%>%
+  ggbarplot(., x = "gene", y = "% input",add = "mean_se", fill="Antibody", position=position_dodge(.7)) +
+  theme_bw() 
+my_graph
+
+
+
 # Rice genes organs from Wang et al 2015 ----
 ## https://doi.org/10.1111/tpj.13018
 
 
 
+geneID <- data.frame (tracking_id  = c("M_XLOC_018824", "M_XLOC_021229", "P_XLOC_016319", "P_XLOC_017990", "M_XLOC_004880", "P_XLOC_020116"),
+                  gene_name = c("MADS1", "MADS34", "MADS22", "DL-P2-F","BOP2", "ActinNA")
+)
+organeID <- data.frame (organ  = c("F1", "F2", "L1", "L2",
+                                         "R1","R2","S1","S2"),
+                        organ_name = c("flower buds_1", "flower buds_2", "leaves_1", "leaves_2",
+                                      "roots_1", "roots_2", "milk grains_1","milk grains_2")
+)
+
+GSE56463_ssRNA.seq_fpkm <- 
+  read.delim("C:/Users/roule/Box/Thesis data add R script and genome wide browser and fulbright ucr if size ok/R projects/R_projects/2022_PostDoc_PreliminaryWorks/R/ChIP/in/GSE56463_ssRNA-seq_fpkm.txt") %>%
+  left_join(geneID) %>%
+  filter(gene_name != "NA") %>%
+  select(-position.Oryza.sativa.L..ssp..Japonica..MSU.Rice.Genome.Annotation.Project.Release.7., -tracking_id)
+
+
+
+GSE56463_ssRNA.seq_fpkm_tidy <- GSE56463_ssRNA.seq_fpkm %>%
+  pivot_longer(!gene_name, names_to = "organ", values_to = "FPKM") %>%
+  left_join(organeID) %>%
+  select(-organ) %>%
+  separate(organ_name, into = c("organ", "replicate"), sep ="_")
+
+
+stat_GSE56463_ssRNA.seq_fpkm_tidyl <- GSE56463_ssRNA.seq_fpkm_tidy %>%
+  group_by(gene_name, organ) %>%
+  summarise(mean=mean(`FPKM`), 
+            median= median(`FPKM`),
+            SD=sd(`FPKM`), #ecart-type
+            n=n(), #nombre d'?chantillons
+            erreur_std=SD/sqrt(n)) 
+
+
+stat_IP_all$gene <- factor(stat_IP_all$gene, levels=c("MADS1", "MADS34", "MADS22"))
+
+
+
+my_graph <- 
+  stat_GSE56463_ssRNA.seq_fpkm_tidyl %>%
+  filter(gene_name %in% c("MADS1", "MADS34", "MADS22"))%>%
+  ggplot(., aes(organ, mean)) +
+  geom_col(position = 'dodge', colour = 'black') +
+  geom_errorbar(aes(ymin=(mean - erreur_std), ymax=(mean + erreur_std)), 
+                size=.5, width=.2, colour = 'black',
+                position = position_dodge(0.9))+
+  xlab(label = "")+
+  ylab(label = "FPKM")+
+  facet_wrap(~gene_name, scale="free", nrow=1)+
+  theme(axis.text.x  = element_text(angle=45, vjust=1, hjust=1))
+my_graph
 
 
 
