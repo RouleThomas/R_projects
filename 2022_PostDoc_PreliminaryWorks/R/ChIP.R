@@ -1456,7 +1456,9 @@ my_graph
 
 # Rice genes organs from Wang et al 2015 ----
 ## https://doi.org/10.1111/tpj.13018
-
+geneIDpe <- data.frame (tracking_id  = c("XLOC_033893"),
+                      gene_name = c("MADS34")
+)
 
 
 geneID <- data.frame (tracking_id  = c("M_XLOC_018824", "M_XLOC_021229", "P_XLOC_016319", "P_XLOC_017990", "M_XLOC_004880", "P_XLOC_020116"),
@@ -1473,6 +1475,12 @@ GSE56463_ssRNA.seq_fpkm <-
   left_join(geneID) %>%
   filter(gene_name != "NA") %>%
   select(-position.Oryza.sativa.L..ssp..Japonica..MSU.Rice.Genome.Annotation.Project.Release.7., -tracking_id)
+GSE56462_peRNA.seq_fpkm <- 
+  read.delim("C:/Users/roule/Box/Thesis data add R script and genome wide browser and fulbright ucr if size ok/R projects/R_projects/2022_PostDoc_PreliminaryWorks/R/ChIP/in/GSE56462_peRNA-seq_fpkm.txt") %>%
+  left_join(geneIDpe) %>%
+  filter(gene_name != "NA") %>%
+  select(-position.Oryza.sativa.L..ssp..Japonica..MSU.Rice.Genome.Annotation.Project.Release.7., -tracking_id)
+
 
 
 
@@ -1481,6 +1489,11 @@ GSE56463_ssRNA.seq_fpkm_tidy <- GSE56463_ssRNA.seq_fpkm %>%
   left_join(organeID) %>%
   select(-organ) %>%
   separate(organ_name, into = c("organ", "replicate"), sep ="_")
+
+
+
+
+
 
 
 stat_GSE56463_ssRNA.seq_fpkm_tidyl <- GSE56463_ssRNA.seq_fpkm_tidy %>%
@@ -1509,6 +1522,128 @@ my_graph <-
   facet_wrap(~gene_name, scale="free", nrow=1)+
   theme(axis.text.x  = element_text(angle=45, vjust=1, hjust=1))
 my_graph
+
+
+
+# Test FIE2 maize direct method Rice well cross link (Glass Bell) ----
+
+Arabidopsis_H3K27me3_pl1 <- read_excel("2022_PostDoc_PreliminaryWorks/R/ChIP/in/Rice_FIE2maizeB2_pl1_20220826.xls") %>%
+  select(-Pos)
+
+Arabidopsis_H3K27me3_pl1 <- read_excel("2022_PostDoc_PreliminaryWorks/R/ChIP/in/Rice_FIE2maizeB2_pl2_20220830.xls") %>%
+  select(-Pos)
+
+Arabidopsis_H3K27me3_pl1 <- read_excel("2022_PostDoc_PreliminaryWorks/R/ChIP/in/Rice_FIE2maizeB2_pl1_pl2.xls",sheet=2) 
+
+GFP_testAB_qPCR_input <- Arabidopsis_H3K27me3_pl1 %>% 
+  filter(condition == "input") %>%
+  mutate(Cp=Cp-log2(10)) %>%
+  mutate(Cp_input=Cp) %>%
+  dplyr::select(-Cp, -condition)
+
+GFP_testAB_qPCR_IP_input <- Arabidopsis_H3K27me3_pl1 %>% 
+  filter(condition != "input") %>%
+  left_join(GFP_testAB_qPCR_input)
+
+
+IP_input_IGG <- GFP_testAB_qPCR_IP_input %>% 
+  filter(condition == "IGG") %>%
+  mutate(IGG = 2^-(Cp-Cp_input)*100) %>%
+  dplyr::select(-Cp, -Cp_input,-condition)%>% 
+  pivot_longer(IGG, names_to = "Antibody", values_to = "% input")
+
+IP_input_H3K27me3 <- GFP_testAB_qPCR_IP_input %>% 
+  filter(condition %in% c("FIE2")) %>%
+  mutate(FIE2 = 2^-(Cp-Cp_input)*100) %>%
+  dplyr::select(-Cp, -Cp_input,-condition)%>% 
+  pivot_longer(FIE2, names_to = "Antibody", values_to = "% input")
+
+
+
+IP_all <- IP_input_IGG %>%
+  bind_rows(IP_input_H3K27me3)
+
+
+
+
+my_graph <- 
+  IP_all %>%
+  ggbarplot(., x = "gene", y = "% input",add = "mean_se", fill="Antibody", position=position_dodge(.7)) +
+  theme_bw() 
+my_graph
+
+
+IP_all$gene <- factor(IP_all$gene, levels=c("ActinNA", "LOC_Os01g51260-P0", "DL-P2-F", "OsYAB4-P3-F", "OsMADS1", "MADS34", "MADS22"))
+
+
+my_graph <- 
+  IP_all %>%
+  filter(gene %in% c("ActinNA", "LOC_Os01g51260-P0", "DL-P2-F", "OsYAB4-P3-F", "OsMADS1", "MADS34", "MADS22"))%>%
+  ggbarplot(., x = "gene", y = "% input",add = "mean_se", fill="Antibody", position=position_dodge(.7)) +
+  theme_bw() 
+my_graph
+
+
+
+# CHIP RNASE A LHP1 well cross link -----
+rNAse_LHP_pl1 <- read_excel("2022_PostDoc_PreliminaryWorks/R/ChIP/in/rNAse LHP pl1.xls") %>%
+  select(-Pos)
+
+
+
+
+
+rNAse_LHP_pl1_input <- rNAse_LHP_pl1 %>% 
+  filter(condition == "input") %>%
+  mutate(Cp=Cp-log2(10)) %>%
+  mutate(Cp_input=Cp) %>%
+  dplyr::select(-Cp, -condition)
+
+rNAse_LHP_pl1_IP_input <- rNAse_LHP_pl1 %>% 
+  filter(condition != "input") %>%
+  left_join(rNAse_LHP_pl1_input)
+
+
+IP_input_IGG <- rNAse_LHP_pl1_IP_input %>% 
+  filter(condition == "IGG") %>%
+  mutate(IGG = 2^-(Cp-Cp_input)*100) %>%
+  dplyr::select(-Cp, -Cp_input,-condition)%>% 
+  pivot_longer(IGG, names_to = "Antibody", values_to = "% input")
+
+IP_input_GFP <- rNAse_LHP_pl1_IP_input %>% 
+  filter(condition %in% c("LHP")) %>%
+  mutate(LHP = 2^-(Cp-Cp_input)*100) %>%
+  dplyr::select(-Cp, -Cp_input,-condition)%>% 
+  pivot_longer(LHP, names_to = "Antibody", values_to = "% input")
+
+
+IP_all <- IP_input_IGG %>%
+  bind_rows(IP_input_GFP) 
+
+
+stat_IP_all <- IP_all %>%
+  group_by(RNAseA, gene,Antibody) %>%
+  summarise(mean=mean(`% input`), 
+            median= median(`% input`),
+            SD=sd(`% input`), #ecart-type
+            n=n(), #nombre d'?chantillons
+            erreur_std=SD/sqrt(n)) 
+
+
+
+
+
+my_graph <- 
+  ggplot(stat_IP_all, aes(gene, mean, fill=Antibody)) +
+  geom_col(position = 'dodge', colour = 'black') +
+  geom_errorbar(aes(ymin=(mean - erreur_std), ymax=(mean + erreur_std)), 
+                size=.5, width=.2, colour = 'black',
+                position = position_dodge(0.9))+
+  facet_wrap(~RNAseA, nrow=1)+
+  xlab(label = "")+
+  ylab(label = "% input")
+my_graph
+
 
 
 
