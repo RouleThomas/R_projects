@@ -1454,6 +1454,19 @@ my_graph
 
 
 
+
+IP_all$gene <- factor(IP_all$gene, levels=c("DL-P2-F","OsMADS1","MADS34","OsYAB4-P3-F", "MADS22","ActinNA", "LOC_Os01g51260-P0" ))
+ 
+
+my_graph <- 
+  IP_all %>%
+  filter(gene %in% c("DL-P2-F","OsMADS1","MADS34", "MADS22", "OsYAB4-P3-F","ActinNA", "LOC_Os01g51260-P0"))%>%
+  ggbarplot(., x = "gene", y = "% input",add = "mean_se", fill="Antibody", position=position_dodge(.7)) +
+  theme_bw() 
+my_graph
+
+
+
 # Rice genes organs from Wang et al 2015 ----
 ## https://doi.org/10.1111/tpj.13018
 geneIDpe <- data.frame (tracking_id  = c("XLOC_033893"),
@@ -1646,5 +1659,184 @@ my_graph
 
 
 
+# CHIP Arabidopsis H3K27me3 Nobu 2014 TPX tube Diagenode Bioruptor -----
+
+
+Arabidopsis_H3K27me3_pl1 <- read_excel("2022_PostDoc_PreliminaryWorks/R/ChIP/in/20220912_TPX_pl1.xls",sheet=1) %>%
+  filter(species=="arabidopsis") %>%
+  select(-Pos)
+
+Arabidopsis_H3K27me3_pl2 <- read_excel("2022_PostDoc_PreliminaryWorks/R/ChIP/in/20220913_TPX_pl2.xls",sheet=1) %>%
+  filter(species=="arabidopsis") %>%
+  select(-Pos)
+
+Arabidopsis_H3K27me3_pl2 <- read_excel("2022_PostDoc_PreliminaryWorks/R/ChIP/in/20220913_TPX_Arabidopsis.xls",sheet=1) %>%
+  filter(species=="arabidopsis") %>%
+  select(-Pos)
+
+GFP_testAB_qPCR_input <- Arabidopsis_H3K27me3_pl2 %>% 
+  filter(condition == "input") %>%
+  mutate(Cp=Cp-log2(10)) %>%
+  mutate(Cp_input=Cp) %>%
+  dplyr::select(-Cp, -condition)
+
+GFP_testAB_qPCR_IP_input <- Arabidopsis_H3K27me3_pl2 %>% 
+  filter(condition != "input") %>%
+  left_join(GFP_testAB_qPCR_input)
+
+
+IP_input_IGG <- GFP_testAB_qPCR_IP_input %>% 
+  filter(condition == "IGG") %>%
+  mutate(IGG = 2^-(Cp-Cp_input)*100) %>%
+  dplyr::select(-Cp, -Cp_input,-condition)%>% 
+  pivot_longer(IGG, names_to = "Antibody", values_to = "% input")
+
+IP_input_H3K27me3 <- GFP_testAB_qPCR_IP_input %>% 
+  filter(condition %in% c("H3K27me3")) %>%
+  mutate(H3K27me3 = 2^-(Cp-Cp_input)*100) %>%
+  dplyr::select(-Cp, -Cp_input,-condition)%>% 
+  pivot_longer(H3K27me3, names_to = "Antibody", values_to = "% input")
+
+
+
+IP_all <- IP_input_IGG %>%
+  bind_rows(IP_input_H3K27me3)
+
+
+
+
+my_graph <- 
+  IP_all %>%
+  ggbarplot(., x = "gene", y = "% input",add = "mean_se", fill="Antibody", position=position_dodge(.7)) +
+  theme_bw() 
+my_graph
+
+
+
+IP_all$gene <- factor(IP_all$gene, levels=c("actin2", "ActinCourtney","ref", "MRN1_pro", "FT" ))
+
+
+my_graph <- 
+  IP_all %>%
+  filter(gene %in% c("actin2", "ActinCourtney","ref", "MRN1_pro", "FT" ))%>%
+  ggbarplot(., x = "gene", y = "% input",add = "mean_se", fill="Antibody", position=position_dodge(.7)) +
+  theme_bw() 
+my_graph
+
+
+# CHIP Rice H3K27me3 Nobu 2014 TPX tube Diagenode Bioruptor -----
+
+
+Arabidopsis_H3K27me3_pl1 <- read_excel("2022_PostDoc_PreliminaryWorks/R/ChIP/in/20220912_TPX_pl1.xls",sheet=1) %>%
+  filter(species=="rice") %>%
+  select(-Pos)
+
+GFP_testAB_qPCR_input <- Arabidopsis_H3K27me3_pl1 %>% 
+  filter(condition == "input") %>%
+  mutate(Cp=Cp-log2(10)) %>%
+  mutate(Cp_input=Cp) %>%
+  dplyr::select(-Cp, -condition)
+
+GFP_testAB_qPCR_IP_input <- Arabidopsis_H3K27me3_pl1 %>% 
+  filter(condition != "input") %>%
+  left_join(GFP_testAB_qPCR_input)
+
+
+IP_input_IGG <- GFP_testAB_qPCR_IP_input %>% 
+  filter(condition == "IGG") %>%
+  mutate(IGG = 2^-(Cp-Cp_input)*100) %>%
+  dplyr::select(-Cp, -Cp_input,-condition)%>% 
+  pivot_longer(IGG, names_to = "Antibody", values_to = "% input")
+
+IP_input_H3K27me3 <- GFP_testAB_qPCR_IP_input %>% 
+  filter(condition %in% c("H3K27me3")) %>%
+  mutate(H3K27me3 = 2^-(Cp-Cp_input)*100) %>%
+  dplyr::select(-Cp, -Cp_input,-condition)%>% 
+  pivot_longer(H3K27me3, names_to = "Antibody", values_to = "% input")
+
+
+
+IP_all <- IP_input_IGG %>%
+  bind_rows(IP_input_H3K27me3)
+
+
+
+
+my_graph <- 
+  IP_all %>%
+  ggbarplot(., x = "gene", y = "% input",add = "mean_se", fill="Antibody", position=position_dodge(.7)) +
+  theme_bw() 
+my_graph
+
+
+
+IP_all$gene <- factor(IP_all$gene, levels=c("DL-P2", "MADS1", "MADS34", "OsYAB4-P3", "MADS22", "actin", "LOC_Os01g51260-P0"))
+
+
+my_graph <- 
+  IP_all %>%
+  filter(gene %in% c("DL-P2", "MADS1", "MADS34", "OsYAB4-P3", "MADS22", "actin", "LOC_Os01g51260-P0"))%>%
+  ggbarplot(., x = "gene", y = "% input",add = "mean_se", fill="Antibody", position=position_dodge(.7)) +
+  theme_bw() 
+my_graph
+
+
+
+# CHIP Rice FIE Nobu 2014 TPX tube Diagenode Bioruptor -----
+
+
+template <- read_excel("2022_PostDoc_PreliminaryWorks/R/ChIP/in/20220919_FIE_Nobu_pl1.xls",sheet=1) %>%
+  filter(exp=="high") %>%
+  select(-Pos)
+
+template_input <- template %>% 
+  filter(condition == "input") %>%
+  mutate(Cp=Cp-log2(10)) %>%
+  mutate(Cp_input=Cp) %>%
+  dplyr::select(-Cp, -condition)
+
+template_IP_input <- template %>% 
+  filter(condition != "input") %>%
+  left_join(template_input)
+
+
+IP_ctrl <- template_IP_input %>% 
+  filter(condition == "IGG") %>%
+  mutate(IGG = 2^-(Cp-Cp_input)*100) %>%
+  dplyr::select(-Cp, -Cp_input,-condition)%>% 
+  pivot_longer(IGG, names_to = "Antibody", values_to = "% input")
+
+IP <- template_IP_input %>% 
+  filter(condition %in% c("FIE")) %>%
+  mutate(FIE = 2^-(Cp-Cp_input)*100) %>%
+  dplyr::select(-Cp, -Cp_input,-condition)%>% 
+  pivot_longer(FIE, names_to = "Antibody", values_to = "% input")
+
+
+
+IP_all <- IP_ctrl %>%
+  bind_rows(IP)
+
+
+
+
+my_graph <- 
+  IP_all %>%
+  ggbarplot(., x = "gene", y = "% input",add = "mean_se", fill="Antibody", position=position_dodge(.7)) +
+  theme_bw() 
+my_graph
+
+
+
+IP_all$gene <- factor(IP_all$gene, levels=c("DL-P2", "MADS1", "MADS34", "OsYAB4-P3", "MADS22", "actin", "LOC_Os01g51260-P0"))
+
+
+my_graph <- 
+  IP_all %>%
+  filter(gene %in% c("DL-P2", "MADS1", "MADS34", "OsYAB4-P3", "MADS22", "actin", "LOC_Os01g51260-P0"))%>%
+  ggbarplot(., x = "gene", y = "% input",add = "mean_se", fill="Antibody", position=position_dodge(.7)) +
+  theme_bw() +
+  theme(axis.text.x  = element_text(angle=45, vjust=1, hjust=1))
+my_graph
 
 
