@@ -1840,3 +1840,144 @@ my_graph <-
 my_graph
 
 
+# CHIP Rice FIE antigen Nobu 2014 TPX tube Diagenode Bioruptor -----
+
+
+template <- read_excel("2022_PostDoc_PreliminaryWorks/R/ChIP/in/FIE_antigen_pl1.xlsx",sheet=1) %>%
+  select(-Pos)
+
+template <- read_excel("2022_PostDoc_PreliminaryWorks/R/ChIP/in/FIE_antigen_pl2.xlsx",sheet=1) %>%
+  select(-Pos)
+
+template <- read_excel("2022_PostDoc_PreliminaryWorks/R/ChIP/in/FIE_antigen.xlsx",sheet=2) %>%
+  select(-Pos)
+
+template_input <- template %>% 
+  filter(condition == "input") %>%
+  mutate(Cp=Cp-log2(10)) %>%
+  mutate(Cp_input=Cp) %>%
+  dplyr::select(-Cp, -condition)
+
+template_IP_input <- template %>% 
+  filter(condition != "input") %>%
+  left_join(template_input)
+
+
+IP_ctrl <- template_IP_input %>% 
+  filter(condition == "IGG") %>%
+  mutate(IGG = 2^-(Cp-Cp_input)*100) %>%
+  dplyr::select(-Cp, -Cp_input,-condition)%>% 
+  pivot_longer(IGG, names_to = "Antibody", values_to = "% input")
+
+IP <- template_IP_input %>% 
+  filter(condition %in% c("FIE")) %>%
+  mutate(FIE = 2^-(Cp-Cp_input)*100) %>%
+  dplyr::select(-Cp, -Cp_input,-condition)%>% 
+  pivot_longer(FIE, names_to = "Antibody", values_to = "% input")
+
+
+
+IP_all <- IP_ctrl %>%
+  bind_rows(IP)
+
+
+
+
+my_graph <- 
+  IP_all %>%
+  ggbarplot(., x = "gene", y = "% input",add = "mean_se", fill="Antibody", position=position_dodge(.7)) +
+  theme_bw() 
+my_graph
+
+
+
+IP_all$gene <- factor(IP_all$gene, levels=c("DL-P2", "MADS1", "MADS34", "OsYAB4-P3", "MADS22", "actin", "LOC_Os01g51260-P0"))
+
+
+my_graph <- 
+  IP_all %>%
+  filter(gene %in% c("DL-P2", "MADS1", "MADS34", "OsYAB4-P3", "MADS22", "actin", "LOC_Os01g51260-P0"))%>%
+  ggbarplot(., x = "gene", y = "% input",add = "mean_se", fill="Antibody", position=position_dodge(.7)) +
+  theme_bw() +
+  theme(axis.text.x  = element_text(angle=45, vjust=1, hjust=1))
+my_graph
+
+
+
+
+# normaliation to IGG
+
+IP_ctrl_untidy <- IP_ctrl %>% rename("IGG"=`% input`) %>% select(-Antibody)
+IP_untidy <- IP %>% rename("FIE"=`% input`) %>% select(-Antibody)
+
+IP_tidy <- IP_ctrl_untidy %>%
+  left_join(IP_untidy) %>%
+  mutate(FIE_norm=FIE-IGG)
+
+
+IP_tidy$gene <- factor(IP_tidy$gene, levels=c("DL-P2", "MADS1", "MADS34", "OsYAB4-P3", "MADS22", "actin", "LOC_Os01g51260-P0"))
+
+
+my_graph <- 
+  IP_tidy %>%
+  filter(gene %in% c("DL-P2", "MADS1", "MADS34", "OsYAB4-P3", "MADS22", "actin", "LOC_Os01g51260-P0"))%>%
+  ggbarplot(., x = "gene", y = "FIE_norm",add = "mean_se", fill="grey", position=position_dodge(.7)) +
+  theme_bw() +
+  theme(axis.text.x  = element_text(angle=45, vjust=1, hjust=1))
+my_graph
+
+# CHIP Rice FIE killing bleed Nobu 2014 TPX tube Diagenode Bioruptor -----
+
+
+template <- read_excel("2022_PostDoc_PreliminaryWorks/R/ChIP/in/FIE_bleed_pl1.xlsx",sheet=1) %>%
+  select(-Pos)
+
+
+template_input <- template %>% 
+  filter(condition == "input") %>%
+  mutate(Cp=Cp-log2(10)) %>%
+  mutate(Cp_input=Cp) %>%
+  dplyr::select(-Cp, -condition)
+
+template_IP_input <- template %>% 
+  filter(condition != "input") %>%
+  left_join(template_input)
+
+IP <- template_IP_input %>% 
+  filter(condition %in% c("IP")) %>%
+  mutate(percent_input = 2^-(Cp-Cp_input)*100) %>%
+  dplyr::select(-Cp, -Cp_input,-condition)
+
+
+
+IP_all <- IP_ctrl %>%
+  bind_rows(IP)
+
+
+
+
+my_graph <- 
+  IP %>%
+  ggbarplot(., x = "gene", y = "percent_input",add = "mean_se", fill="antibody", position=position_dodge(.7)) +
+  theme_bw() 
+my_graph
+
+
+
+IP$gene <- factor(IP$gene, levels=c("DL-P2", "MADS1", "MADS34", "actinNA", "actin", "LOC_Os01g51260-P0"))
+IP$antibody <- factor(IP$antibody, levels=c("IgG", "FIE_2.5", "FIE_10", "FIE_25"))
+
+my_graph <- 
+  IP %>%
+  filter(gene %in% c("DL-P2", "MADS1", "MADS34", "OsYAB4-P3", "MADS22", "actin", "LOC_Os01g51260-P0"))%>%
+  ggbarplot(., x = "gene", y = "percent_input", add = "mean_se", fill="antibody", position=position_dodge(.7)) +
+  theme_bw() +
+  theme(axis.text.x  = element_text(angle=45, vjust=1, hjust=1))
+my_graph
+
+
+
+
+
+
+
